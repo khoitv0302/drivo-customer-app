@@ -61,6 +61,7 @@ export function mapTrip(dto: MappableTripDto, isRated = false): Trip {
         },
     serviceType: toServiceType(dto.vehicleType),
     isRated,
+    canRate: dto.canRate,
     pickupLat: dto.pickupLat,
     pickupLng: dto.pickupLng,
     dropoffLat: dto.dropoffLat,

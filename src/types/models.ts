@@ -43,6 +43,7 @@ export interface TripDto {
   counterpartyName: string;
   counterpartyRating: number | null;
   counterpartyAvatarUrl: string | null;
+  canRate: boolean;
 }
 
 export interface TripFeedResponse {
@@ -198,6 +199,10 @@ export interface CreateBookingRequest {
   dropoffAddress: string;
   /** Mã ưu đãi muốn áp dụng (rỗng nếu không chọn) */
   codes: string[];
+  /** Cho phép ghép xe điện */
+  allowElectricVehicle: boolean;
+  /** Yêu cầu xuất hóa đơn VAT cho chuyến này */
+  vatInvoiceRequested: boolean;
 }
 
 export type BookingStatus = 'requested' | string;

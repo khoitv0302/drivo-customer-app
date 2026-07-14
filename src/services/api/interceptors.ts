@@ -1,36 +1,7 @@
-import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
-import { API_URL, API_TIMEOUT } from '@constants/config';
-import { useAuthStore, type AuthSession } from '@store/auth.store';
+import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import { useAuthStore } from '@store/auth.store';
+import { ensureFreshAccessToken, forceRefreshAccessToken } from '@services/auth/tokenRefresh';
 import { ApiError, type ApiErrorResponse, type ApiFieldError } from './types';
-
-// POST /auth/refresh trả về cùng shape với login/verify-OTP → dùng lại AuthSession.
-
-// axios "trần" (không interceptor) để gọi refresh — tránh đệ quy 401 vô hạn.
-const refreshClient = axios.create({ baseURL: API_URL, timeout: API_TIMEOUT });
-
-// Single-flight: nhiều request cùng dính 401 sẽ chia sẻ 1 lần gọi refresh.
-let refreshPromise: Promise<string> | null = null;
-
-async function runRefresh(): Promise<string> {
-  const refreshToken = useAuthStore.getState().refreshToken;
-  if (!refreshToken) throw new Error('NO_REFRESH_TOKEN');
-
-  if (__DEV__) console.log('[API] ↻ POST /auth/refresh (làm mới access token)');
-  const { data } = await refreshClient.post<AuthSession>('/auth/refresh', { refreshToken });
-  // setSession cập nhật cả access token (RAM/AsyncStorage) và refresh token mới (SecureStore).
-  // Backend xoay refresh token mỗi lần refresh → phải lưu lại token mới.
-  useAuthStore.getState().setSession(data);
-  return data.accessToken;
-}
-
-function refreshAccessToken(): Promise<string> {
-  if (!refreshPromise) {
-    refreshPromise = runRefresh().finally(() => {
-      refreshPromise = null;
-    });
-  }
-  return refreshPromise;
-}
 
 // ── Log request/response (chỉ ở dev) ────────────────────────────────────────
 // Cố ý KHÔNG log body hay header Authorization — chúng chứa mật khẩu/OTP/token.
@@ -71,9 +42,10 @@ function parseFieldErrors(data: unknown): ApiFieldError[] {
 
 // Gắn interceptor cho request/response: đính token, tự refresh khi 401, chuẩn hoá lỗi tập trung.
 export function attachInterceptors(client: AxiosInstance) {
-  // Request: tự đính Bearer token nếu đã đăng nhập.
-  client.interceptors.request.use((config) => {
-    const token = useAuthStore.getState().token;
+  // Request: đọc token + expiresAt, sắp hết hạn (<1 phút) thì chủ động refresh trước rồi mới
+  // đính Bearer token — cùng cơ chế ensureFreshAccessToken() mà SignalR accessTokenFactory dùng.
+  client.interceptors.request.use(async (config) => {
+    const token = await ensureFreshAccessToken();
     if (token) {
       config.headers.set('Authorization', `Bearer ${token}`);
     }
@@ -115,7 +87,7 @@ export function attachInterceptors(client: AxiosInstance) {
         if (canRefresh && original) {
           original._retry = true;
           try {
-            await refreshAccessToken();
+            await forceRefreshAccessToken();
             // Request interceptor sẽ tự đính access token mới khi phát lại.
             return client(original);
           } catch {

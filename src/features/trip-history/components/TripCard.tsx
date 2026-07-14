@@ -19,7 +19,9 @@ interface Props {
 
 export default function TripCard({ trip, showActions = false, onRate, onRebook, onPress }: Props) {
   const status = STATUS_CONFIG[trip.status];
-  const canRate = trip.status === 'completed' && !trip.isRated;
+  // canRate lấy từ API (đúng theo policy backend, vd hạn đánh giá) — kết hợp isRated tạm giữ ở
+  // client để nút tắt ngay sau khi đánh giá xong, không cần chờ refetch list.
+  const canRate = trip.canRate && !trip.isRated;
 
   return (
     <TouchableOpacity

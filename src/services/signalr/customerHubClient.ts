@@ -8,6 +8,7 @@ import {
 } from '@microsoft/signalr';
 import { SIGNALR_CUSTOMER_HUB_URL } from '@constants/config';
 import { useAuthStore } from '@store/auth.store';
+import { ensureFreshAccessToken } from '@services/auth/tokenRefresh';
 
 // Logger tuỳ chỉnh — luôn ghi qua console.log dù severity gì. Logger mặc định của SignalR tự
 // map Warning/Error sang console.warn/console.error, mà React Native mặc định hiện đè màn
@@ -50,7 +51,9 @@ let trackedTripId: string | null = null;
 function buildConnection(): HubConnection {
   const conn = new HubConnectionBuilder()
     .withUrl(SIGNALR_CUSTOMER_HUB_URL, {
-      accessTokenFactory: () => useAuthStore.getState().token ?? '',
+      // Gọi trước mỗi lần (re)connect — cùng cơ chế check-hạn-và-refresh với Axios interceptor
+      // (ensureFreshAccessToken), tránh SignalR tự dùng access token đã hết hạn khi reconnect.
+      accessTokenFactory: async () => (await ensureFreshAccessToken()) ?? '',
     })
     // Mặc định withAutomaticReconnect() chỉ thử lại 4 lần (0s/2s/10s/30s) rồi bỏ cuộc hẳn
     // (bắn onclose, không tự thử lại nữa) — mất kết nối tạm thời (mạng yếu, app xuống nền)
@@ -90,6 +93,16 @@ AppState.addEventListener('change', (state) => {
   }
 });
 
+// Đăng xuất (chủ động ở useLogout, hoặc bị ép ở interceptor khi refresh cũng thất bại) đều đi
+// qua clearToken() → token chuyển null. Lắng nghe đúng 1 chỗ này để ngắt hub thay vì rải
+// disconnectCustomerHub() ở từng nơi gọi logout — tránh hub cứ tự động reconnect vô thời hạn
+// với token rỗng sau khi đã đăng xuất.
+useAuthStore.subscribe((state, prevState) => {
+  if (prevState.token && !state.token) {
+    disconnectCustomerHub().catch((error) => console.log('[SignalR] ngắt kết nối sau đăng xuất thất bại', error));
+  }
+});
+
 export function getCustomerHubConnection(): HubConnection {
   if (!connection) connection = buildConnection();
   return connection;
@@ -102,6 +115,14 @@ export async function connectCustomerHub(): Promise<HubConnection> {
   if (conn.state !== HubConnectionState.Disconnected) {
     console.log('[SignalR] đã ở trạng thái', conn.state, '— bỏ qua connect');
     return conn;
+  }
+
+  // Đảm bảo access token còn hạn trước khi connect — cùng cơ chế refresh với API
+  // (ensureFreshAccessToken), tránh mất công connect với token đã hết hạn.
+  const token = await ensureFreshAccessToken();
+  if (!token) {
+    console.log('[SignalR] không có access token hợp lệ — bỏ qua connect');
+    throw new Error('NO_VALID_ACCESS_TOKEN');
   }
 
   console.log('[SignalR] → connecting to', SIGNALR_CUSTOMER_HUB_URL);

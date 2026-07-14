@@ -26,6 +26,8 @@ export interface Trip {
   driver: TripDriver;
   serviceType: ServiceType;
   isRated: boolean;
+  /** Từ API — chỉ true khi chuyến đã hoàn thành và chưa bị chặn đánh giá (vd quá hạn) */
+  canRate: boolean;
   /** Toạ độ điểm đón/đến — dùng cho nút "Đặt lại" mở màn đặt xe với đúng lộ trình */
   pickupLat: number | null;
   pickupLng: number | null;

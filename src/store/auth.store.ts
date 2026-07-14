@@ -7,18 +7,22 @@ import {
   deleteRefreshToken,
 } from '@services/storage/tokenStorage';
 
-// Phiên đăng nhập trả về từ API verify OTP / refresh.
+// Phiên đăng nhập trả về từ API verify OTP / login / refresh — CÙNG một shape.
+// expiresAt: hạn của accessToken (UTC ISO string) — dùng để chủ động refresh trước khi hết hạn
+// thay vì đợi 401 (xem @services/auth/tokenRefresh).
 export interface AuthSession {
   accessToken: string;
   refreshToken: string;
   userId: string;
   roles: string[];
   driverStatus: string;
+  expiresAt: string;
 }
 
 interface AuthState {
   token: string | null; // = accessToken; RootNavigator dùng để gate auth
   refreshToken: string | null; // giữ trong RAM cho interceptor; nguồn bền vững là SecureStore
+  expiresAt: string | null; // hạn của accessToken hiện tại (UTC ISO string)
   userId: string | null;
   roles: string[];
   driverStatus: string | null;
@@ -34,6 +38,7 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       refreshToken: null,
+      expiresAt: null,
       userId: null,
       roles: [],
       driverStatus: null,
@@ -45,6 +50,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           token: session.accessToken,
           refreshToken: session.refreshToken,
+          expiresAt: session.expiresAt,
           userId: session.userId,
           roles: session.roles,
           driverStatus: session.driverStatus,
@@ -52,7 +58,14 @@ export const useAuthStore = create<AuthState>()(
       },
       clearToken: () => {
         deleteRefreshToken().catch(() => {});
-        set({ token: null, refreshToken: null, userId: null, roles: [], driverStatus: null });
+        set({
+          token: null,
+          refreshToken: null,
+          expiresAt: null,
+          userId: null,
+          roles: [],
+          driverStatus: null,
+        });
       },
       _setHydrated: () => set({ _hasHydrated: true }),
     }),
@@ -62,6 +75,7 @@ export const useAuthStore = create<AuthState>()(
       // KHÔNG persist refreshToken ở đây — nó nằm trong SecureStore, không để plaintext trong AsyncStorage.
       partialize: (state) => ({
         token: state.token,
+        expiresAt: state.expiresAt,
         userId: state.userId,
         roles: state.roles,
         driverStatus: state.driverStatus,

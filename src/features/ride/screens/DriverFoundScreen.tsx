@@ -20,6 +20,9 @@ const SUPPORT_PHONE = '19001234';
 function fmtVND(n: number) {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
+function fmtDist(m: number) {
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+}
 
 export default function DriverFoundScreen({ navigation, route }: RootScreenProps<'DriverFound'>) {
   const insets = useSafeAreaInsets();
@@ -52,6 +55,14 @@ export default function DriverFoundScreen({ navigation, route }: RootScreenProps
     if (pickupEta) return pickupEta.etaMinutes;
     const live = trip?.liveEta;
     if (live && live.phase === 'pickup') return Math.max(1, Math.round(live.etaSeconds / 60));
+    return null;
+  }, [pickupEta, trip?.liveEta]);
+  // Số km hiển thị cạnh ETA: cùng nguồn ưu tiên như trên (tin 'eta' realtime trước, liveEta
+  // ban đầu sau) — không tự tính lại từ Directions API để khớp đúng số backend đã tính ETA.
+  const pickupEtaDistanceM = useMemo<number | null>(() => {
+    if (pickupEta) return pickupEta.distanceKm * 1000;
+    const live = trip?.liveEta;
+    if (live && live.phase === 'pickup') return live.distanceMeters;
     return null;
   }, [pickupEta, trip?.liveEta]);
   // FE card money = netFareAmount ?? fareAmount ?? quotedFareAmount — fallback về cước
@@ -226,7 +237,7 @@ export default function DriverFoundScreen({ navigation, route }: RootScreenProps
       )}
 
       {/* ── Bottom sheet (kéo thanh "–" để thu gọn) ── */}
-      <DraggableBottomSheet style={{ paddingBottom: insets.bottom + 16 }} collapsedVisibleHeight={168}>
+      <DraggableBottomSheet style={{ paddingBottom: insets.bottom + 4 }} collapsedVisibleHeight={168}>
         {/* Success banner */}
         <View style={s.successBanner}>
           <View style={s.successCheck}>
@@ -239,6 +250,12 @@ export default function DriverFoundScreen({ navigation, route }: RootScreenProps
               </Text>
             ) : (
               <Text style={s.successSub}>Tài xế đang đến đón bạn</Text>
+            )}
+            {pickupEtaDistanceM != null && (
+              <View style={s.distanceBadge}>
+                <Ionicons name="navigate" size={11} color="#2563EB" />
+                <Text style={s.distanceBadgeText}>Cách {fmtDist(pickupEtaDistanceM)}</Text>
+              </View>
             )}
           </View>
           <Image
@@ -356,6 +373,11 @@ const s = StyleSheet.create({
   },
   successSub: { fontSize: 12, color: '#4b5563' },
   etaStrong: { fontSize: 13, fontWeight: '800', color: '#111827' },
+  distanceBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    backgroundColor: '#dbeafe', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6,
+  },
+  distanceBadgeText: { fontSize: 11, fontWeight: '700', color: '#2563EB' },
 
   positionLoading: {
     position: 'absolute', alignSelf: 'center',

@@ -59,7 +59,10 @@ export default function DestinationSearchScreen({ navigation, route }: RootScree
 
   const [activeField, setActiveField] = useState<ActiveField>(editField ?? 'destination');
   const [originQuery, setOriginQuery] = useState(currentOrigin?.name ?? '');
-  const [destQuery, setDestQuery] = useState(currentDestination?.name ?? '');
+  // Bấm vào ô "điểm đến" từ Map để đổi điểm đến → mở ô tìm kiếm trống để gõ ngay, không hiện
+  // sẵn địa điểm cũ. Nếu người dùng không chọn gì mà back lại, Map vẫn giữ nguyên điểm đến cũ
+  // (route.params của Map không đổi vì không có goToMap nào được gọi).
+  const [destQuery, setDestQuery] = useState(editField === 'destination' ? '' : currentDestination?.name ?? '');
   const [debouncedOriginQuery, setDebouncedOriginQuery] = useState('');
   const [debouncedDestQuery, setDebouncedDestQuery] = useState('');
   const [selectedOrigin, setSelectedOrigin] = useState<PlaceDetails | null>(currentOrigin ?? null);

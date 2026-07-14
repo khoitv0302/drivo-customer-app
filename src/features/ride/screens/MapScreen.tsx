@@ -16,6 +16,7 @@ import { useVouchers } from '../api/useVouchers';
 import { useBookingEstimate } from '../api/useBookingEstimate';
 import { useCreateBooking } from '../api/useCreateBooking';
 import { VEHICLE_TYPE_BY_SERVICE } from '../types';
+import { useRideOptionsStore } from '@store/rideOptions.store';
 
 const HCM_FALLBACK: [number, number] = [106.660172, 10.762622];
 const DRIVO_XU_BALANCE = 540;
@@ -156,8 +157,10 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [discountModalVisible, setDiscountModalVisible] = useState(false);
   const [optionsVisible, setOptionsVisible] = useState(false);
-  const [allowElectric, setAllowElectric] = useState(false);
-  const [exportVat, setExportVat] = useState(false);
+  const allowElectric = useRideOptionsStore((state) => state.allowElectricVehicle);
+  const setAllowElectric = useRideOptionsStore((state) => state.setAllowElectricVehicle);
+  const exportVat = useRideOptionsStore((state) => state.vatInvoiceRequested);
+  const setExportVat = useRideOptionsStore((state) => state.setVatInvoiceRequested);
 
   const [promoCode, setPromoCode] = useState('');
   const [promoError, setPromoError] = useState<string | null>(null);
@@ -297,6 +300,8 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
         dropoffLng: destination.longitude,
         dropoffAddress: destination.address,
         codes: selectedVoucher ? [selectedVoucher.code] : [],
+        allowElectricVehicle: allowElectric,
+        vatInvoiceRequested: exportVat,
       });
       navigation.navigate('FindingDriver', {
         bookingId: booking.bookingId,
@@ -541,9 +546,9 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
         visible={optionsVisible}
         onClose={() => setOptionsVisible(false)}
         allowElectric={allowElectric}
-        onToggleElectric={() => setAllowElectric(v => !v)}
+        onToggleElectric={() => setAllowElectric(!allowElectric)}
         exportVat={exportVat}
-        onToggleVat={() => setExportVat(v => !v)}
+        onToggleVat={() => setExportVat(!exportVat)}
         bottomInset={insets.bottom}
       />
 

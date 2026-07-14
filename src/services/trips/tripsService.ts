@@ -19,7 +19,7 @@ export async function getTrips(params: GetTripsParams = {}): Promise<TripFeedRes
       status: params.status ?? undefined,
     },
   });
-  console.log('[Trips] history:', JSON.stringify(data, null, 2));
+  console.log('[Trips] history: OK', data.items.length, 'item(s)');
   return data;
 }
 
@@ -30,7 +30,7 @@ export async function getTripDetail(tripId: string): Promise<TripDetailDto> {
     params: { as: 'customer' },
   });
   const trip = data && typeof data === 'object' && 'trip' in data ? data.trip : (data as TripDetailDto);
-  console.log('[Trips] trip detail:', trip);
+  console.log('[Trips] trip detail: OK', trip.tripId);
   return trip;
 }
 
@@ -42,7 +42,7 @@ export async function getCurrentTrip(): Promise<TripDetailDto | null> {
       params: { as: 'customer' },
     });
     const trip = data && typeof data === 'object' && 'trip' in data ? data.trip : (data as TripDetailDto | null);
-    console.log('[Trips] current trip:', trip);
+    console.log('[Trips] current trip: OK', trip?.tripId ?? 'none');
     return trip ?? null;
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
