@@ -1,11 +1,46 @@
-import { useRef } from 'react';
-import { Animated, PanResponder, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 const ACTION_WIDTH = 88;
 
-// Hàng vuốt sang trái để lộ nút Xoá. Dùng PanResponder + Animated (không cần
-// react-native-gesture-handler → khỏi build lại dev client).
+interface RightActionProps {
+  drag: SharedValue<number>;
+  swipeable: SwipeableMethods;
+  onDelete: () => void;
+}
+
+// Nút "Xoá" trượt theo đúng tay kéo — style tính bằng useAnimatedStyle nên chạy thẳng trên UI
+// thread (Reanimated), không qua JS bridge như bản PanResponder + Animated cũ, nhờ vậy mượt
+// tuyệt đối kể cả khi JS thread đang bận (render list, gọi API...).
+function RightAction({ drag, swipeable, onDelete }: RightActionProps) {
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: drag.value + ACTION_WIDTH }],
+  }));
+
+  return (
+    <Reanimated.View style={[s.action, style]}>
+      <TouchableOpacity
+        onPress={() => {
+          swipeable.close();
+          onDelete();
+        }}
+        activeOpacity={0.8}
+        style={s.actionBtn}
+      >
+        <Ionicons name="trash-outline" size={22} color="white" />
+        <Text style={s.actionText}>Xoá</Text>
+      </TouchableOpacity>
+    </Reanimated.View>
+  );
+}
+
+// Hàng vuốt sang trái để lộ nút Xoá — dùng Swipeable (bản Reanimated) của
+// react-native-gesture-handler, chuẩn công nghiệp cho swipe-to-delete: gesture nhận trên UI
+// thread, không phải round-trip qua JS↔Native bridge như PanResponder + Animated cũ nên không
+// còn giật khi JS thread bận.
 export default function SwipeableRow({
   children,
   onDelete,
@@ -13,80 +48,22 @@ export default function SwipeableRow({
   children: React.ReactNode;
   onDelete: () => void;
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const startX = useRef(0); // vị trí X lúc bắt đầu kéo (0 = đóng, -ACTION_WIDTH = mở)
-
-  const settle = (open: boolean) => {
-    startX.current = open ? -ACTION_WIDTH : 0;
-    Animated.spring(translateX, {
-      toValue: startX.current,
-      useNativeDriver: true,
-      bounciness: 0,
-      speed: 20,
-    }).start();
-  };
-
-  const pan = useRef(
-    PanResponder.create({
-      // Chỉ chiếm khi vuốt ngang rõ ràng (để không phá cuộn dọc của list).
-      onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-      onPanResponderGrant: () => {
-        translateX.stopAnimation((v: number) => {
-          startX.current = v;
-        });
-      },
-      onPanResponderMove: (_, g) => {
-        let next = startX.current + g.dx;
-        if (next > 0) next = 0; // không cho kéo qua phải quá mép
-        if (next < -ACTION_WIDTH) next = -ACTION_WIDTH - (Math.abs(next) - ACTION_WIDTH) * 0.15; // kháng nhẹ
-        translateX.setValue(next);
-      },
-      onPanResponderRelease: (_, g) => {
-        const final = startX.current + g.dx;
-        settle(final < -ACTION_WIDTH / 2);
-      },
-      onPanResponderTerminate: () => settle(false),
-    }),
-  ).current;
-
-  const handleDelete = () => {
-    // Trượt hàng ra hẳn cho mượt rồi mới xoá (cache lạc quan gỡ item).
-    Animated.timing(translateX, {
-      toValue: -600,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => onDelete());
-  };
-
   return (
-    <View>
-      {/* Nút Xoá nằm sau, lộ ra khi kéo trái */}
-      <View
-        style={{
-          position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: ACTION_WIDTH,
-          backgroundColor: '#ef4444',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <TouchableOpacity
-          onPress={handleDelete}
-          activeOpacity={0.8}
-          style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name="trash-outline" size={22} color="white" />
-          <Text style={{ color: 'white', fontSize: 12, fontWeight: '600', marginTop: 2 }}>Xoá</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Animated.View style={{ transform: [{ translateX }] }} {...pan.panHandlers}>
-        {children}
-      </Animated.View>
-    </View>
+    <ReanimatedSwipeable
+      friction={1.5}
+      rightThreshold={ACTION_WIDTH / 2}
+      overshootRight={false}
+      renderRightActions={(_progress, drag, swipeable) => (
+        <RightAction drag={drag} swipeable={swipeable} onDelete={onDelete} />
+      )}
+    >
+      {children}
+    </ReanimatedSwipeable>
   );
 }
+
+const s = StyleSheet.create({
+  action: { width: ACTION_WIDTH },
+  actionBtn: { flex: 1, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center' },
+  actionText: { color: 'white', fontSize: 12, fontWeight: '600', marginTop: 2 },
+});

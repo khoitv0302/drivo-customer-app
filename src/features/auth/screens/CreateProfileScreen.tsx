@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Alert,
+  ActivityIndicator, View, Text, TouchableOpacity, TextInput,
+  ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { useAuthStore } from '../../../store';
 import { ApiError } from '@services/api/types';
 import { setPassword as setAccountPassword } from '../api/authService';
 import { updateCustomerProfile } from '@services/customer/customerService';
+import { useToast } from '@shared/components/ui/Toast';
 
 // ---------------------------------------------------------------------------
 // Password strength (giống màn Đổi mật khẩu)
@@ -85,6 +86,7 @@ export default function CreateProfileScreen({ route }: RootScreenProps<'CreatePr
   const insets = useSafeAreaInsets();
   const { session, contact } = route.params;
   const setSession = useAuthStore(s => s.setSession);
+  const { showToast } = useToast();
 
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
@@ -117,7 +119,7 @@ export default function CreateProfileScreen({ route }: RootScreenProps<'CreatePr
       setSession(session);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Có lỗi xảy ra, vui lòng thử lại.';
-      Alert.alert('Tạo hồ sơ thất bại', message);
+      showToast(message, { type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -220,9 +222,10 @@ export default function CreateProfileScreen({ route }: RootScreenProps<'CreatePr
           onPress={handleSubmit}
           disabled={submitting}
           activeOpacity={0.85}
-          className="rounded-2xl py-4 items-center mt-2"
-          style={{ backgroundColor: submitting ? '#93b4f5' : '#2563EB' }}
+          className="rounded-2xl py-4 items-center mt-2 flex-row justify-center"
+          style={{ backgroundColor: submitting ? '#93b4f5' : '#2563EB', gap: 8 }}
         >
+          {submitting && <ActivityIndicator size="small" color="white" />}
           <Text className="text-white font-bold text-base">
             {submitting ? 'Đang tạo...' : 'Hoàn tất & Bắt đầu'}
           </Text>

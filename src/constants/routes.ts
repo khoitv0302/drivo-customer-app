@@ -12,6 +12,7 @@ export const ROUTES = {
   MAP: 'Map',
   FINDING_DRIVER: 'FindingDriver',
   DRIVER_FOUND: 'DriverFound',
+  ON_TRIP: 'OnTrip',
   RIDE_COMPLETE: 'RideComplete',
   DESTINATION_SEARCH: 'DestinationSearch',
   PICKUP_LOCATION: 'PickupLocation',

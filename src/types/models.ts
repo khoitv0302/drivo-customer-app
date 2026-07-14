@@ -51,8 +51,28 @@ export interface TripFeedResponse {
   totalCount: number;
 }
 
-// GET /trips/{tripId} — chi tiết 1 chuyến. Là superset của TripDto (thêm mã chuyến,
-// các mốc thời gian, phí giảm/thực trả, khuyến mãi đã áp...).
+// ETA kèm sẵn trong trip detail — chốt tại thời điểm gọi API, dùng hiển thị NGAY trước khi có
+// tin 'eta' realtime đầu tiên từ CustomerHub (tránh phải chờ ~45s). Lưu ý đơn vị khác với
+// TripEtaMessage bên SignalR: etaSeconds/distanceMeters (giây/mét), không phải phút/km.
+// phase: 'pickup' = đang tới đón | 'dropoff' = đang chở khách tới điểm đến.
+export interface LiveEta {
+  phase: 'pickup' | 'dropoff' | string;
+  etaSeconds: number;
+  distanceMeters: number;
+  isApproximate: boolean;
+  ts: number;
+}
+
+// Thông tin đối phương (tài xế khi xem as=customer) trả về lồng trong TripDetailDto.
+export interface TripCounterparty {
+  fullName: string;
+  /** Chỉ có giá trị trong khoảng thời gian chuyến đang diễn ra ("in-window") */
+  phone: string | null;
+  rating: number | null;
+  avatarUrl: string | null;
+}
+
+// GET /trips/{tripId} — chi tiết 1 chuyến. Response thực tế bọc trong { trip: TripDetailDto }.
 export interface TripDetailDto {
   tripId: string;
   bookingId: string;
@@ -61,7 +81,7 @@ export interface TripDetailDto {
   /** Mã chuyến hiển thị cho người dùng, vd "DRV-00000001" */
   tripCode: string;
   vehicleType: string;
-  /** vd "scheduled" | "instant" */
+  /** vd "p2p" | "scheduled" | "instant" */
   bookingType: string;
   status: ApiTripStatus | string;
   assignedAt: string;
@@ -69,27 +89,36 @@ export interface TripDetailDto {
   arrivedAt: string | null;
   /** Mốc bắt đầu di chuyển */
   startedAt: string | null;
+  /** Mốc tài xế đến điểm trả khách */
+  destinationArrivedAt: string | null;
   completedAt: string | null;
   distanceKm: number | null;
   durationMin: number | null;
   /** Số phút chờ tại điểm đón */
   waitingMin: number | null;
-  pickupLat: number | null;
-  pickupLng: number | null;
-  dropoffLat: number | null;
-  dropoffLng: number | null;
+  pickupLat: number;
+  pickupLng: number;
+  dropoffLat: number;
+  dropoffLng: number;
   fareAmount: number | null;
   discountAmount: number | null;
   netFareAmount: number | null;
+  /** Cước tạm tính lúc đặt — dùng làm fallback khi chuyến chưa có fareAmount/netFareAmount */
+  quotedFareAmount: number | null;
   paymentMethod: string | null;
   cancelReason: string | null;
   pickupAddress: string;
   dropoffAddress: string;
-  counterpartyName: string;
-  counterpartyRating: number | null;
-  counterpartyAvatarUrl: string | null;
+  counterparty: TripCounterparty;
+  note: string | null;
+  canRate: boolean;
+  myRating: number | null;
+  allowElectricVehicle: boolean;
+  vatInvoiceRequested: boolean;
   /** Danh sách khuyến mãi đã áp (shape chưa dùng tới → để unknown) */
   appliedPromotions: unknown[];
+  /** ETA kèm sẵn lúc gọi API (đón/trả) — hiển thị ngay trước khi có tin 'eta' realtime. null nếu chuyến không ở pha di chuyển. */
+  liveEta: LiveEta | null;
 }
 
 // ── Promotions / Vouchers (GET /promotions/vouchers) ────────────────────────
@@ -184,6 +213,39 @@ export interface CreateBookingResponse {
   appliedPromotions: AppliedPromotionEstimate[];
   discountAmount: number;
   netFare: number;
+}
+
+// Vị trí thô của 1 tài xế gần đó ({lat,lng}) — dùng vẽ icon xe quanh điểm đón lúc đang tìm.
+export interface NearbyDriverLocation {
+  lat: number;
+  lng: number;
+}
+
+// GET /bookings/{id} — chi tiết booking khi đang tìm tài xế (trước khi có trip).
+export interface BookingDetailDto {
+  bookingId: string;
+  customerId: string;
+  /** Loại chuyến, vd "p2p" */
+  type: string;
+  status: BookingStatus;
+  /** vd "car_auto", "motorbike" */
+  vehicleType: string;
+  requiredSkills: string[];
+  pickupLat: number;
+  pickupLng: number;
+  pickupAddress: string;
+  dropoffLat: number;
+  dropoffLng: number;
+  dropoffAddress: string;
+  genderPref: string | null;
+  scheduledAt: string | null;
+  fareAmount: number;
+  discountAmount: number;
+  createdAt: string;
+  /** Mốc hết hạn tìm tài xế (ISO 8601) — dùng đếm ngược thời gian còn lại */
+  searchExpiresAt: string;
+  /** Vị trí các tài xế gần điểm đón — cập nhật mỗi lần poll, dùng vẽ icon xe trên bản đồ */
+  nearbyDrivers: NearbyDriverLocation[];
 }
 
 export interface CustomerPreferences {

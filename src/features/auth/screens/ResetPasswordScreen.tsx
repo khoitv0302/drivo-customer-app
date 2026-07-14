@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Alert,
+  ActivityIndicator, View, Text, TouchableOpacity, TextInput,
+  ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { RootScreenProps } from '../../../navigation/types';
 import { useAuthStore } from '../../../store';
 import { useConfirmPasswordReset } from '../api/useConfirmPasswordReset';
+import { useToast } from '@shared/components/ui/Toast';
 
 // ---------------------------------------------------------------------------
 // Password strength (giống màn Tạo hồ sơ / Đổi mật khẩu)
@@ -83,6 +84,7 @@ export default function ResetPasswordScreen({ navigation, route }: RootScreenPro
   const insets = useSafeAreaInsets();
   const { phone, code } = route.params;
   const setSession = useAuthStore(s => s.setSession);
+  const { showToast } = useToast();
   const { mutate: confirmReset, isPending } = useConfirmPasswordReset();
 
   const [password, setPassword] = useState('');
@@ -112,11 +114,10 @@ export default function ResetPasswordScreen({ navigation, route }: RootScreenPro
           const invalidOtp = err.errors?.some((e) => e.code === 'INVALID_OTP');
           if (invalidOtp) {
             // Mã hết hạn giữa bước verify và confirm → quay lại nhập lại mã.
-            Alert.alert('Mã không hợp lệ', 'Mã đặt lại đã hết hạn, vui lòng thử lại.', [
-              { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
+            showToast('Mã đặt lại đã hết hạn, vui lòng thử lại.', { type: 'error' });
+            navigation.goBack();
           } else {
-            Alert.alert('Đặt lại mật khẩu thất bại', err.message);
+            showToast(err.message, { type: 'error' });
           }
         },
       },
@@ -201,9 +202,10 @@ export default function ResetPasswordScreen({ navigation, route }: RootScreenPro
           onPress={handleSubmit}
           disabled={isPending}
           activeOpacity={0.85}
-          className="rounded-2xl py-4 items-center mt-2"
-          style={{ backgroundColor: isPending ? '#93b4f5' : '#2563EB' }}
+          className="rounded-2xl py-4 items-center mt-2 flex-row justify-center"
+          style={{ backgroundColor: isPending ? '#93b4f5' : '#2563EB', gap: 8 }}
         >
+          {isPending && <ActivityIndicator size="small" color="white" />}
           <Text className="text-white font-bold text-base">
             {isPending ? 'Đang đặt lại...' : 'Đặt lại mật khẩu'}
           </Text>

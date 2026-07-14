@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Image, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Easing, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DraggableBottomSheet from '@shared/components/layout/DraggableBottomSheet';
+import { useToast } from '@shared/components/ui/Toast';
+import { useBookingMatchListener } from '../hooks/useBookingMatchListener';
+import { useBookingDetail } from '../api/useBookingDetail';
 import type { RootScreenProps } from '../../../navigation/types';
 
-const SEARCH_SECONDS = 300; // 05:00
-const DRIVERS_NOTIFIED = 8;
 const PROGRESS_SEGMENTS = 5;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -30,36 +31,64 @@ function fmtVND(n: number) {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
-// Vị trí giả của các tài xế quanh điểm đón (lệch theo lng/lat).
-const DRIVER_OFFSETS: [number, number][] = [
-  [0.004, 0.003], [-0.0035, 0.0042], [0.0052, -0.0028], [-0.0043, -0.0031],
-  [0.0018, -0.0052], [-0.0012, 0.0055], [0.0038, 0.0012], [-0.0052, 0.0008],
-];
-interface MockDriver { id: string; coordinate: [number, number] }
-function genDrivers(c: [number, number]): MockDriver[] {
-  return DRIVER_OFFSETS.map(([dLng, dLat], i) => ({ id: `d${i}`, coordinate: [c[0] + dLng, c[1] + dLat] }));
-}
+interface DriverMarker { id: string; coordinate: [number, number] }
 
 export default function FindingDriverScreen({ navigation, route }: RootScreenProps<'FindingDriver'>) {
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const {
-    serviceType, pickupName, pickupLat, pickupLng, dropoffName,
+    bookingId, serviceType, pickupName, pickupLat, pickupLng, dropoffName,
     distanceM, durationS, fare, paymentLabel,
   } = route.params;
 
+  // Booking đã tạo thành công ở màn trước → connect CustomerHub, chờ event ghép tài xế
+  // rồi lấy chuyến hiện tại (GET /trips/me/current) và sang màn DriverFound.
+  useBookingMatchListener(navigation, route.params);
+
+  // Chi tiết booking: searchExpiresAt (đếm ngược) + nearbyDrivers (vị trí tài xế ban đầu).
+  const { data: booking } = useBookingDetail(bookingId);
+
   const isCar = serviceType === 'car';
   const pickupCoord = useMemo<[number, number]>(() => [pickupLng, pickupLat], [pickupLng, pickupLat]);
-  const drivers = useMemo(() => genDrivers(pickupCoord), [pickupCoord]);
 
-  const [remain, setRemain] = useState(SEARCH_SECONDS);
+  // Icon xe tài xế gần điểm đón — lấy từ nearbyDrivers, cập nhật mỗi lần poll (5s). Chưa có
+  // data (lần poll đầu chưa về) thì để rỗng, không vẽ điểm giả.
+  const drivers = useMemo<DriverMarker[]>(
+    () => (booking?.nearbyDrivers ?? []).map((d, i) => ({ id: `d${i}`, coordinate: [d.lng, d.lat] })),
+    [booking?.nearbyDrivers],
+  );
+
   const [filled, setFilled] = useState(1);
 
-  // Đếm ngược thời gian tìm tài xế.
+  // Khoá mốc hết hạn tìm tài xế NGAY lần đầu backend trả về searchExpiresAt. Các lần poll sau
+  // KHÔNG cập nhật lại → FE tự đếm ngược từ mốc đã khoá, số giây không bị nhảy theo server.
+  const [lockedExpiryMs, setLockedExpiryMs] = useState<number | null>(null);
   useEffect(() => {
-    if (remain <= 0) return;
-    const t = setInterval(() => setRemain((v) => v - 1), 1000);
+    if (lockedExpiryMs === null && booking?.searchExpiresAt) {
+      setLockedExpiryMs(new Date(booking.searchExpiresAt).getTime());
+    }
+  }, [booking?.searchExpiresAt, lockedExpiryMs]);
+
+  // Chỉ đếm ngược khi backend đã trả searchExpiresAt; chưa có thì remain = null → hiện "--:--".
+  const [remain, setRemain] = useState<number | null>(null);
+  useEffect(() => {
+    if (lockedExpiryMs === null) return;
+    const tick = () => setRemain(Math.max(0, Math.round((lockedExpiryMs - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [remain]);
+  }, [lockedExpiryMs]);
+
+  // Hết thời gian tìm tài xế (theo đúng mốc server trả về) → thoát booking, quay lại Map.
+  const expiredRef = useRef(false);
+  useEffect(() => {
+    if (expiredRef.current) return;
+    if (lockedExpiryMs !== null && remain !== null && remain <= 0) {
+      expiredRef.current = true;
+      showToast('Chưa tìm được tài xế, vui lòng thử lại.', { type: 'info' });
+      navigation.goBack();
+    }
+  }, [remain, lockedExpiryMs, navigation, showToast]);
 
   // Thanh tiến trình chạy vòng để tạo cảm giác "đang tìm".
   useEffect(() => {
@@ -67,11 +96,7 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
     return () => clearInterval(t);
   }, []);
 
-  // Giả lập tìm được tài xế sau ít giây → sang màn "đã tìm thấy" (replace để không back lại đây).
-  useEffect(() => {
-    const t = setTimeout(() => navigation.replace('DriverFound', route.params), 4500);
-    return () => clearTimeout(t);
-  }, [navigation, route.params]);
+  // Không tự động sang màn "đã tìm thấy" nữa — chờ luồng ghép tài xế thật (SignalR) điều hướng.
 
   // Sóng radar quanh điểm đón — 3 vòng lan toả lệch pha nhau.
   const ring0 = useRef(new Animated.Value(0)).current;
@@ -90,19 +115,20 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
     return () => loops.forEach((l) => l.stop());
   }, [ring0, ring1, ring2]);
 
-  // Không tự hủy — hướng người dùng gọi tổng đài để được hỗ trợ hủy.
+  // Huỷ chuyến (tạm cho test) — chưa gọi API huỷ, quay lại đúng màn trước đó (Map) thay vì
+  // thoát thẳng về Home, để người dùng có thể chỉnh lại và đặt lại nếu muốn.
   const cancelTrip = () => {
     Alert.alert(
       'Hủy chuyến',
-      'Để hủy chuyến, vui lòng gọi tổng đài 1900 1234 để được hỗ trợ.',
+      'Bạn có chắc muốn hủy chuyến này?',
       [
-        { text: 'Đóng', style: 'cancel' },
-        { text: 'Gọi tổng đài', onPress: () => Linking.openURL('tel:19001234').catch(() => {}) },
+        { text: 'Không', style: 'cancel' },
+        { text: 'Hủy chuyến', style: 'destructive', onPress: () => navigation.goBack() },
       ],
     );
   };
 
-  const comingSoon = () => Alert.alert('Sắp ra mắt', 'Tính năng đang được phát triển.');
+  const comingSoon = () => showToast('Tính năng đang được phát triển.', { type: 'info' });
 
   return (
     <View style={StyleSheet.absoluteFillObject}>
@@ -115,19 +141,28 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
         scaleBarEnabled={false}
         localizeLabels={{ locale: 'vi' }}
       >
-        <Mapbox.Camera centerCoordinate={pickupCoord} zoomLevel={14} animationMode="none" />
+        {/* paddingBottom lớn đẩy tâm (điểm đón) lên phía trên, tránh bị bottom sheet che khuất. */}
+        <Mapbox.Camera
+          centerCoordinate={pickupCoord}
+          zoomLevel={14}
+          padding={{ paddingTop: 0, paddingBottom: 300, paddingLeft: 0, paddingRight: 0 }}
+          animationMode="none"
+        />
+        {/* Vị trí thật của người dùng — chấm tròn xanh + vòng loang (pulsing). */}
+        <Mapbox.LocationPuck visible pulsing={{ isEnabled: true, color: '#2563EB' }} />
 
-        {/* Tài xế quanh điểm đón */}
+        {/* Tài xế quanh điểm đón. allowOverlap* để zoom xa các marker chồng nhau không bị
+            Mapbox tự ẩn (mặc định false) — nếu không, zoom xa sẽ mất icon tài xế, phải zoom lại. */}
         {drivers.map((d) => (
-          <Mapbox.MarkerView key={d.id} id={d.id} coordinate={d.coordinate}>
+          <Mapbox.MarkerView key={d.id} id={d.id} coordinate={d.coordinate} allowOverlap allowOverlapWithPuck>
             <View style={s.driverMarker}>
               <MaterialCommunityIcons name={isCar ? 'car' : 'motorbike'} size={15} color="white" />
             </View>
           </Mapbox.MarkerView>
         ))}
 
-        {/* Điểm đón + sóng radar */}
-        <Mapbox.MarkerView id="pickup" coordinate={pickupCoord}>
+        {/* Điểm đón — sóng radar (nền) */}
+        <Mapbox.MarkerView id="pickup" coordinate={pickupCoord} allowOverlap allowOverlapWithPuck>
           <View style={s.radarWrap} pointerEvents="none">
             {[ring0, ring1, ring2].map((v, i) => (
               <Animated.View
@@ -142,8 +177,12 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
               />
             ))}
             <View style={s.radarCore} />
-            <View style={s.pickupDot} />
           </View>
+        </Mapbox.MarkerView>
+
+        {/* Ghim điểm đón — anchor đáy để mũi ghim chỉ đúng toạ độ, đứng trên tâm radar */}
+        <Mapbox.MarkerView id="pickupPin" coordinate={pickupCoord} anchor={{ x: 0.5, y: 1 }} allowOverlap allowOverlapWithPuck>
+          <Image source={require('../../../../assets/pin.png')} style={s.pickupPin} resizeMode="contain" />
         </Mapbox.MarkerView>
       </Mapbox.MapView>
 
@@ -162,7 +201,7 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
       <View style={[s.callout, { top: insets.top + 60 }]} pointerEvents="none">
         <Text style={s.calloutTitle}>Đang tìm tài xế gần bạn...</Text>
         <Text style={s.calloutSub}>
-          Đã gửi yêu cầu đến <Text style={s.calloutStrong}>{DRIVERS_NOTIFIED}</Text> tài xế
+          Đã gửi yêu cầu đến tất cả tài xế gần bạn
         </Text>
       </View>
 
@@ -179,7 +218,7 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
           </View>
           <View style={s.timerWrap}>
             <View style={s.timerRing}>
-              <Text style={s.timerText}>{fmtTime(remain)}</Text>
+              <Text style={s.timerText}>{remain != null ? fmtTime(remain) : '--:--'}</Text>
             </View>
             <Text style={s.timerLabel}>Thời gian còn lại</Text>
           </View>
@@ -195,7 +234,6 @@ export default function FindingDriverScreen({ navigation, route }: RootScreenPro
               />
             ))}
           </View>
-          <Text style={s.progressLabel}>Đã gửi tới {DRIVERS_NOTIFIED} tài xế</Text>
         </View>
 
         <View style={s.divider} />
@@ -273,10 +311,7 @@ const s = StyleSheet.create({
     borderWidth: 2, borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.06)',
   },
   radarCore: { position: 'absolute', width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(37,99,235,0.15)' },
-  pickupDot: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: '#2563EB', borderWidth: 4, borderColor: 'white',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 6,
-  },
+  pickupPin: { width: 36, height: 36 },
 
   // Top
   topRow: {
@@ -320,10 +355,9 @@ const s = StyleSheet.create({
   timerText: { fontSize: 12, fontWeight: '700', color: '#111827' },
   timerLabel: { fontSize: 10, color: '#9ca3af', marginTop: 3 },
 
-  progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
-  progressBar: { flexDirection: 'row', gap: 6, flex: 1, marginRight: 12 },
+  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
+  progressBar: { flexDirection: 'row', gap: 6, flex: 1 },
   progressSeg: { flex: 1, height: 5, borderRadius: 3 },
-  progressLabel: { fontSize: 12, color: '#6b7280' },
 
   divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 12 },
 

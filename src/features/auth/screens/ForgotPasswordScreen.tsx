@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Dimensions,
   Keyboard,
   Pressable,
@@ -16,6 +16,7 @@ import { ROUTES } from '../../../constants/routes';
 import type { RootScreenProps } from '../../../navigation/types';
 import { toE164Vn } from '@shared/utils/phone';
 import { useRequestPasswordReset } from '../api/useRequestPasswordReset';
+import { useToast } from '@shared/components/ui/Toast';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const CARD_MIN_HEIGHT = SCREEN_HEIGHT * 0.6;
@@ -24,6 +25,7 @@ export default function ForgotPasswordScreen({ navigation }: RootScreenProps<'Fo
   const [focused, setFocused] = useState(false);
   const [value, setValue] = useState('');
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const { mutate: requestReset, isPending } = useRequestPasswordReset();
 
   const handlePhoneChange = (text: string) => {
@@ -51,7 +53,7 @@ export default function ForgotPasswordScreen({ navigation }: RootScreenProps<'Fo
           });
         },
         onError: (err) => {
-          Alert.alert('Gửi mã thất bại', err.message);
+          showToast(err.message, { type: 'error' });
         },
       },
     );
@@ -141,6 +143,7 @@ export default function ForgotPasswordScreen({ navigation }: RootScreenProps<'Fo
               disabled={!canSubmit}
               onPress={handleContinue}
             >
+              {isPending && <ActivityIndicator size="small" color="white" />}
               <Text className={`font-semibold text-base ${canSubmit ? 'text-white' : 'text-gray-400'}`}>
                 {isPending ? 'Đang gửi...' : 'Gửi mã đặt lại'}
               </Text>

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, Pressable, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { RootScreenProps } from '../../../navigation/types';
 import { ROUTES } from '../../../constants/routes';
 import { useRequestPasswordReset } from '../api/useRequestPasswordReset';
 import { useVerifyPasswordResetCode } from '../api/useVerifyPasswordResetCode';
+import { useToast } from '@shared/components/ui/Toast';
 
 const CODE_LENGTH = 6;
 const EXPIRE_SECONDS = 150; // 02:30
@@ -25,6 +26,7 @@ export default function VerifyResetCodeScreen({ navigation, route }: RootScreenP
   const [expire, setExpire] = useState(EXPIRE_SECONDS);
   const [resend, setResend] = useState(RESEND_SECONDS);
   const { phone, contact } = route.params;
+  const { showToast } = useToast();
   const { mutate: verify, isPending: isVerifying } = useVerifyPasswordResetCode();
   const { mutate: sendCode, isPending: isResending } = useRequestPasswordReset();
 
@@ -70,7 +72,7 @@ export default function VerifyResetCodeScreen({ navigation, route }: RootScreenP
             Vibration.vibrate(200);
           } else {
             // Lỗi khác (hết hạn, mạng...) → thông báo + xoá mã
-            Alert.alert('Xác thực thất bại', err.message);
+            showToast(err.message, { type: 'error' });
             setCode('');
           }
         },
@@ -90,7 +92,7 @@ export default function VerifyResetCodeScreen({ navigation, route }: RootScreenP
           setError(false);
         },
         onError: (err) => {
-          Alert.alert('Gửi lại mã thất bại', err.message);
+          showToast(err.message, { type: 'error' });
         },
       },
     );
@@ -161,7 +163,10 @@ export default function VerifyResetCodeScreen({ navigation, route }: RootScreenP
               <Text className="text-sm text-red-500 font-medium">Mã không đúng, vui lòng thử lại</Text>
             </>
           ) : isVerifying ? (
-            <Text className="text-sm text-primary font-medium">Đang xác thực...</Text>
+            <>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text className="text-sm text-primary font-medium">Đang xác thực...</Text>
+            </>
           ) : (
             <>
               <MaterialCommunityIcons name="shield-check-outline" size={15} color="#9ca3af" />
@@ -179,8 +184,9 @@ export default function VerifyResetCodeScreen({ navigation, route }: RootScreenP
             onPress={handleResend}
             disabled={resend > 0 || isResending}
             activeOpacity={0.7}
-            className="mt-2"
+            className="mt-2 flex-row items-center gap-2"
           >
+            {isResending && <ActivityIndicator size="small" color="#d1d5db" />}
             <Text className={`text-base font-semibold ${resend > 0 || isResending ? 'text-gray-300' : 'text-primary'}`}>
               {isResending
                 ? 'Đang gửi...'

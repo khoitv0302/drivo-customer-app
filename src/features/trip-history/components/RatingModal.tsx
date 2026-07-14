@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Animated,
   Image,
   Keyboard,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRateTrip } from '@shared/hooks/useRateTrip';
+import { useToast } from '@shared/components/ui/Toast';
 import type { Trip } from '../types';
 
 const MODAL_HEIGHT = 480;
@@ -31,7 +32,11 @@ interface Props {
 export default function RatingModal({ visible, trip, onClose, onRated }: Props) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
+  // Lỗi thật (không phải "đã đánh giá rồi") hiện banner tại chỗ trong modal — toast global
+  // không đè lên được react-native <Modal> (Modal render ở layer native riêng).
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { mutate: submitRating, isPending } = useRateTrip();
+  const { showToast } = useToast();
 
   const slideAnim = useRef(new Animated.Value(MODAL_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -43,6 +48,7 @@ export default function RatingModal({ visible, trip, onClose, onRated }: Props) 
     if (visible) {
       setRating(0);
       setComment('');
+      setErrorMessage(null);
       keyboardY.setValue(0);
       Animated.parallel([
         Animated.spring(slideAnim, {
@@ -105,12 +111,14 @@ export default function RatingModal({ visible, trip, onClose, onRated }: Props) 
 
   const handleSubmit = () => {
     if (!trip || rating === 0 || isPending) return;
+    setErrorMessage(null);
     submitRating(
       { tripId: trip.id, stars: rating, comment: comment.trim() },
       {
         onSuccess: () => {
           onRated(trip.id);
           onClose();
+          showToast('Cảm ơn bạn đã đánh giá tài xế!', { type: 'success' });
         },
         onError: (err) => {
           const already = err.errors?.some((e) => e.code === 'RATING_ALREADY_SUBMITTED');
@@ -118,9 +126,11 @@ export default function RatingModal({ visible, trip, onClose, onRated }: Props) 
             // Đã đánh giá trước đó → vẫn đồng bộ trạng thái + đóng, không coi là lỗi cứng.
             onRated(trip.id);
             onClose();
-            Alert.alert('Đã đánh giá', 'Bạn đã đánh giá chuyến này rồi.');
+            showToast('Bạn đã đánh giá chuyến này rồi.', { type: 'info' });
           } else {
-            Alert.alert('Gửi đánh giá thất bại', err.message);
+            // Modal vẫn mở để người dùng thử lại → hiện banner lỗi tại chỗ thay vì toast
+            // (toast global không hiện đè lên được react-native <Modal>).
+            setErrorMessage(err.message);
           }
         },
       },
@@ -226,13 +236,22 @@ export default function RatingModal({ visible, trip, onClose, onRated }: Props) 
           />
         </View>
 
+        {/* Banner lỗi tại chỗ — modal vẫn mở để thử lại, toast global không đè lên Modal được */}
+        {errorMessage && (
+          <View className="mx-5 mt-3 flex-row items-center rounded-xl bg-red-50 px-3.5 py-2.5" style={{ gap: 8 }}>
+            <Ionicons name="alert-circle" size={16} color="#ef4444" />
+            <Text className="flex-1 text-sm text-red-600">{errorMessage}</Text>
+          </View>
+        )}
+
         {/* Submit button */}
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={!canSubmit}
           activeOpacity={0.85}
-          style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
+          style={[styles.submitButton, !canSubmit && styles.submitDisabled, isPending && styles.submitButtonRow]}
         >
+          {isPending && <ActivityIndicator size="small" color="#9ca3af" />}
           <Text style={[styles.submitText, !canSubmit && styles.submitTextDisabled]}>
             {isPending ? 'Đang gửi...' : 'Gửi đánh giá'}
           </Text>
@@ -291,6 +310,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
   },
+  submitButtonRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   submitDisabled: {
     backgroundColor: '#f3f4f6',
     shadowOpacity: 0,

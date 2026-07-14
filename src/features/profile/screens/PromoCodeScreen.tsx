@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '@shared/components/ui/Toast';
 import type { RootScreenProps } from '../../../navigation/types';
 
 const MOCK_PROMOS = [
@@ -13,6 +14,7 @@ const MOCK_PROMOS = [
 
 export default function PromoCodeScreen({ navigation }: RootScreenProps<'PromoCode'>) {
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const [input, setInput] = useState('');
 
   function applyCode() {
@@ -20,11 +22,11 @@ export default function PromoCodeScreen({ navigation }: RootScreenProps<'PromoCo
     if (!trimmed) return;
     const found = MOCK_PROMOS.find(p => p.code === trimmed);
     if (!found) {
-      Alert.alert('Không hợp lệ', 'Mã khuyến mãi không tồn tại hoặc đã hết hạn.');
+      showToast('Mã khuyến mãi không tồn tại hoặc đã hết hạn.', { type: 'error' });
     } else if (found.isUsed) {
-      Alert.alert('Đã sử dụng', 'Mã này đã được sử dụng trước đó.');
+      showToast('Mã này đã được sử dụng trước đó.', { type: 'info' });
     } else {
-      Alert.alert('Thành công', `Đã áp dụng mã ${found.code} — ${found.description}`);
+      showToast(`Đã áp dụng mã ${found.code} — ${found.description}`, { type: 'success' });
       setInput('');
     }
   }

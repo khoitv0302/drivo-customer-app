@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   Image,
   Modal,
@@ -17,11 +16,19 @@ import Card from '../../../shared/components/ui/Card';
 import Carousel from '../../../shared/components/ui/Carousel';
 import RecentTrips from '../components/RecentTrips';
 import { useMe } from '@shared/hooks/useMe';
-import { useCustomerHubTest } from '../hooks/useCustomerHubTest';
+import { useToast } from '@shared/components/ui/Toast';
+import { useAuthStore } from '../../../store';
+import { useResumeActiveTrip } from '../../../navigation/useResumeActiveTrip';
 import { ROUTES, TABS } from '../../../constants/routes';
 import type { ServiceType } from '../../../navigation/types';
 import type { MainTabScreenProps } from '../../../navigation/types';
 import type { TripDto } from '../../../types/models';
+
+// Nhãn ngắn hiện trên banner theo màn sẽ vào — DriverFound (đang đón) hay OnTrip (đang đi).
+const RESUME_LABEL: Record<string, string> = {
+  [ROUTES.DRIVER_FOUND]: 'Tài xế đang đến đón bạn',
+  [ROUTES.ON_TRIP]: 'Đang trong chuyến đi',
+};
 
 const BANNERS = [
   require('../../../../assets/banner1.png'),
@@ -39,12 +46,16 @@ const SHOW_OTHER_SERVICES = false;
 
 export default function HomeScreen({ navigation }: MainTabScreenProps<'Home'>) {
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const { data: me } = useMe();
+  const token = useAuthStore((s) => s.token);
+  // Chỉ check trạng thái chuyến đang dở để hiện banner — không tự động điều hướng, phải chạm
+  // vào banner mới vào màn DriverFound/OnTrip.
+  const { resume } = useResumeActiveTrip(token);
   // Tên hiển thị: có tên thì chào tên, không thì "bạn".
   const greetingName = me?.fullName?.trim() || 'bạn';
   const [serviceSheetVisible, setServiceSheetVisible] = useState(false);
   const slideAnim = useRef(new Animated.Value(300)).current;
-  const { state: hubState, connect: connectHub } = useCustomerHubTest();
 
   function openServiceSheet() {
     setServiceSheetVisible(true);
@@ -108,7 +119,7 @@ export default function HomeScreen({ navigation }: MainTabScreenProps<'Home'>) {
 
   // Dịch vụ chưa triển khai → báo tạm.
   function comingSoon() {
-    Alert.alert('Sắp ra mắt', 'Tính năng đang được phát triển.');
+    showToast('Tính năng đang được phát triển.', { type: 'info' });
   }
 
   return (
@@ -170,6 +181,30 @@ export default function HomeScreen({ navigation }: MainTabScreenProps<'Home'>) {
             </View>
           </Card>
         </TouchableOpacity>
+
+        {/* Banner chuyến đang hoạt động — chỉ hiện khi có, chạm vào mới điều hướng vào
+            DriverFound/OnTrip (không tự động đẩy vào lúc mở app nữa). */}
+        {resume && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate(resume.routeName, resume.params)}
+          >
+            <Card className="mx-5 mb-6 p-3" style={{ shadowOpacity: 0.12, shadowRadius: 16, elevation: 5 }}>
+              <View className="flex-row items-center">
+                <View className="w-11 h-11 rounded-2xl bg-green-50 items-center justify-center">
+                  <Ionicons name="car-sport" size={20} color="#16a34a" />
+                </View>
+                <View className="flex-1 ml-3">
+                  <Text className="text-xs text-gray-400">Chuyến đang hoạt động</Text>
+                  <Text className="text-base font-medium text-gray-800 mt-0.5">
+                    {RESUME_LABEL[resume.routeName] ?? 'Chạm để tiếp tục'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+              </View>
+            </Card>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Scrollable content */}
@@ -209,15 +244,6 @@ export default function HomeScreen({ navigation }: MainTabScreenProps<'Home'>) {
             />
           </View>
         </Card>
-
-        {/* Nút tạm test kết nối SignalR — xoá khi có luồng realtime thật */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={connectHub}
-          className="mx-5 mt-4 py-3 rounded-2xl bg-gray-900 items-center"
-        >
-          <Text className="text-white font-semibold">Test SignalR ({hubState})</Text>
-        </TouchableOpacity>
 
         {/* Dịch vụ khác — tạm ẩn cho đến khi có nội dung */}
         {SHOW_OTHER_SERVICES && (

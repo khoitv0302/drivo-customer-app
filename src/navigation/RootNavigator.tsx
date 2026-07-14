@@ -12,7 +12,7 @@ import ResetPasswordScreen from '../features/auth/screens/ResetPasswordScreen';
 import MainTabNavigator from './MainTabNavigator';
 import NotificationsScreen from '../features/notifications/screens/NotificationsScreen';
 import TripDetailScreen from '../features/trip-history/screens/TripDetailScreen';
-import { MapScreen, FindingDriverScreen, DriverFoundScreen, RideCompleteScreen, DestinationSearchScreen, PickupLocationScreen } from '../features/ride';
+import { MapScreen, FindingDriverScreen, DriverFoundScreen, OnTripScreen, RideCompleteScreen, DestinationSearchScreen, PickupLocationScreen } from '../features/ride';
 import {
   ChangePasswordScreen,
   MembershipPackagesScreen,
@@ -52,6 +52,7 @@ export default function RootNavigator() {
           <Stack.Screen name={ROUTES.MAP} component={MapScreen} />
           <Stack.Screen name={ROUTES.FINDING_DRIVER} component={FindingDriverScreen} />
           <Stack.Screen name={ROUTES.DRIVER_FOUND} component={DriverFoundScreen} />
+          <Stack.Screen name={ROUTES.ON_TRIP} component={OnTripScreen} />
           <Stack.Screen name={ROUTES.RIDE_COMPLETE} component={RideCompleteScreen} />
           <Stack.Screen name={ROUTES.CHANGE_PASSWORD} component={ChangePasswordScreen} />
           <Stack.Screen name={ROUTES.MEMBERSHIP_PACKAGES} component={MembershipPackagesScreen} />

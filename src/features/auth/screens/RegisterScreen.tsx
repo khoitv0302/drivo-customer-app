@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Dimensions,
   Keyboard,
   Pressable,
@@ -17,6 +17,7 @@ import type { RootScreenProps, OtpMethod } from '../../../navigation/types';
 import { toE164Vn } from '@shared/utils/phone';
 import { useRequestOtp } from '../api/useRequestOtp';
 import OtpMethodSheet from '../components/OtpMethodSheet';
+import { useToast } from '@shared/components/ui/Toast';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const CARD_MIN_HEIGHT = SCREEN_HEIGHT * 0.6;
@@ -26,6 +27,7 @@ export default function RegisterScreen({ navigation }: RootScreenProps<'Register
   const [value, setValue] = useState('');
   const [sheetVisible, setSheetVisible] = useState(false);
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const { mutate: sendOtp, isPending } = useRequestOtp();
 
   const handlePhoneChange = (text: string) => {
@@ -52,7 +54,7 @@ export default function RegisterScreen({ navigation }: RootScreenProps<'Register
         onSuccess: (res) => {
           // Chỉ sang màn OTP khi backend xác nhận đã gửi (HTTP 200 + code OTP_SENT)
           if (res.code !== 'OTP_SENT') {
-            Alert.alert('Gửi OTP thất bại', res.message || 'Vui lòng thử lại.');
+            showToast(res.message || 'Gửi OTP thất bại, vui lòng thử lại.', { type: 'error' });
             return;
           }
           navigation.navigate(ROUTES.OTP, {
@@ -62,7 +64,7 @@ export default function RegisterScreen({ navigation }: RootScreenProps<'Register
           });
         },
         onError: (err) => {
-          Alert.alert('Gửi OTP thất bại', err.message);
+          showToast(err.message, { type: 'error' });
         },
       },
     );
@@ -152,6 +154,7 @@ export default function RegisterScreen({ navigation }: RootScreenProps<'Register
               disabled={!isValid || isPending}
               onPress={handleContinue}
             >
+              {isPending && <ActivityIndicator size="small" color="white" />}
               <Text className={`font-semibold text-base ${isValid && !isPending ? 'text-white' : 'text-gray-400'}`}>
                 {isPending ? 'Đang gửi...' : 'Tiếp tục'}
               </Text>

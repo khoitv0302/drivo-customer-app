@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Switch, Text, TextInput,
+  ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Switch, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, View,
 } from 'react-native';
 import Mapbox, { locationManager } from '@rnmapbox/maps';
 import type { Location } from '@rnmapbox/maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { MAPBOX_PUBLIC_TOKEN } from '../../../constants/config';
 import type { RootScreenProps, ServiceType } from '../../../navigation/types';
 import type { Voucher } from '../../../types/models';
 import type { ApiError } from '../../../services/api/types';
+import { useToast } from '@shared/components/ui/Toast';
 import { useVouchers } from '../api/useVouchers';
 import { useBookingEstimate } from '../api/useBookingEstimate';
 import { useCreateBooking } from '../api/useCreateBooking';
@@ -87,16 +88,6 @@ function voucherSaving(v: Voucher, fare: number): number {
 
 // ─── Drivers ─────────────────────────────────────────────────────────────────
 
-const DRIVER_OFFSETS: [number, number][] = [
-  [0.003, 0.002], [-0.002, 0.0035], [0.0042, -0.0028],
-  [-0.0033, -0.0021], [0.0015, -0.0044], [-0.001, 0.0048],
-];
-
-interface MockDriver { id: string; coordinate: [number, number] }
-function genDrivers(c: [number, number]): MockDriver[] {
-  return DRIVER_OFFSETS.map(([dLng, dLat], i) => ({ id: `d${i}`, coordinate: [c[0] + dLng, c[1] + dLat] }));
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtDist(m: number) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
@@ -147,9 +138,9 @@ function PaymentIcon({ item, size }: { item: PaymentItem; size: number }) {
 export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>) {
   const { serviceType, origin, destination } = route.params;
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
 
   const [userCoords, setUserCoords] = useState<[number, number]>(HCM_FALLBACK);
-  const [mockDrivers, setMockDrivers] = useState<MockDriver[]>(genDrivers(HCM_FALLBACK));
   const locationSet = useRef(false);
   const userCoordsRef = useRef<[number, number]>(HCM_FALLBACK);
   const originRef = useRef(origin);
@@ -169,6 +160,7 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
   const [exportVat, setExportVat] = useState(false);
 
   const [promoCode, setPromoCode] = useState('');
+  const [promoError, setPromoError] = useState<string | null>(null);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   const [useDrivoXu, setUseDrivoXu] = useState(false);
 
@@ -198,7 +190,7 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
 
   const { mutateAsync: createBooking, isPending: isBooking } = useCreateBooking();
 
-  // GPS listener — updates userCoords for LocationPuck/drivers, fetches initial route when no explicit origin
+  // GPS listener — updates userCoords for LocationPuck, fetches initial route when no explicit origin
   useEffect(() => {
     const fallback = setTimeout(() => {
       if (!locationSet.current && destinationRef.current && !originRef.current) {
@@ -216,7 +208,6 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
       const coords: [number, number] = [lng, lat];
       userCoordsRef.current = coords;
       setUserCoords(coords);
-      setMockDrivers(genDrivers(coords));
       if (destinationRef.current && !originRef.current) {
         fetchRoute(coords, [destinationRef.current.longitude, destinationRef.current.latitude]);
       }
@@ -275,8 +266,11 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
     if (voucher && isVoucherUsable(voucher, basePrice)) {
       setSelectedOfferId(voucher.promotionId);
       setPromoCode('');
+      setPromoError(null);
     } else {
-      Alert.alert('Mã không hợp lệ', 'Mã ưu đãi không tồn tại hoặc chưa đủ điều kiện áp dụng.');
+      // Banner lỗi tại chỗ trong modal (không phải toast) — toast global không đè lên được
+      // react-native <Modal> trong khi modal còn mở.
+      setPromoError('Mã ưu đãi không tồn tại hoặc chưa đủ điều kiện áp dụng.');
     }
   }
 
@@ -288,7 +282,7 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
   // Bấm "Đặt tài xế" → gọi POST /bookings, thành công thì sang màn tìm tài xế (cần có điểm đến).
   const handleBook = async () => {
     if (!destination) {
-      Alert.alert('Chưa chọn điểm đến', 'Vui lòng chọn điểm đến trước khi đặt tài xế.');
+      showToast('Vui lòng chọn điểm đến trước khi đặt tài xế.', { type: 'info' });
       return;
     }
     const selectedVoucher = vouchers.find(v => v.promotionId === selectedOfferId);
@@ -320,7 +314,7 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
       });
     } catch (e) {
       const err = e as ApiError;
-      Alert.alert('Đặt tài xế thất bại', err.message || 'Vui lòng thử lại sau.');
+      showToast(err.message || 'Đặt tài xế thất bại, vui lòng thử lại sau.', { type: 'error' });
     }
   };
 
@@ -346,7 +340,7 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
         localizeLabels={{ locale: 'vi' }}
       >
         <Mapbox.Camera {...cameraProps} />
-        <Mapbox.LocationPuck visible />
+        <Mapbox.LocationPuck visible pulsing={{ isEnabled: true, color: '#2563EB' }} />
 
         {routeGeometry && (
           <>
@@ -371,16 +365,21 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
           </>
         )}
 
-        {/* Origin marker */}
-        <Mapbox.MarkerView id="origin" coordinate={effectiveOriginCoords}>
-          <View style={s.originOuter}>
-            <View style={s.originInner} />
-          </View>
+        {/* Điểm đón — ghim. anchor đáy để mũi ghim chỉ đúng toạ độ; allowOverlap* để zoom xa
+            marker không bị Mapbox tự ẩn khi chồng lên nhau/lên location puck. */}
+        <Mapbox.MarkerView
+          id="origin"
+          coordinate={effectiveOriginCoords}
+          anchor={{ x: 0.5, y: 1 }}
+          allowOverlap
+          allowOverlapWithPuck
+        >
+          <Image source={require('../../../../assets/pin.png')} style={s.pickupPin} resizeMode="contain" />
         </Mapbox.MarkerView>
 
         {/* Destination marker */}
         {destCoords && (
-          <Mapbox.MarkerView id="dest" coordinate={destCoords}>
+          <Mapbox.MarkerView id="dest" coordinate={destCoords} allowOverlap allowOverlapWithPuck>
             <View style={s.destMarkerWrap}>
               <View style={s.destPin}>
                 <Ionicons name="location-sharp" size={44} color="#EF4444" />
@@ -390,13 +389,6 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
           </Mapbox.MarkerView>
         )}
 
-        {mockDrivers.map(d => (
-          <Mapbox.MarkerView key={d.id} id={d.id} coordinate={d.coordinate}>
-            <View style={s.driverMarker}>
-              <MaterialCommunityIcons name={serviceType === 'car' ? 'car' : 'motorbike'} size={15} color="white" />
-            </View>
-          </Mapbox.MarkerView>
-        ))}
       </Mapbox.MapView>
 
       {/* ── Top card ── */}
@@ -558,12 +550,13 @@ export default function MapScreen({ navigation, route }: RootScreenProps<'Map'>)
 {/* ── Discount modal ── */}
       <DiscountModal
         visible={discountModalVisible}
-        onClose={() => setDiscountModalVisible(false)}
+        onClose={() => { setDiscountModalVisible(false); setPromoError(null); }}
         topInset={insets.top}
         bottomInset={insets.bottom}
         promoCode={promoCode}
-        onPromoCodeChange={setPromoCode}
+        onPromoCodeChange={v => { setPromoCode(v); setPromoError(null); }}
         onApplyCode={applyPromoCode}
+        promoError={promoError}
         vouchers={vouchers}
         fare={basePrice}
         selectedOfferId={selectedOfferId}
@@ -702,11 +695,11 @@ function PaymentModal({ visible, selectedId, onSelect, onClose, bottomInset }: {
 // ─── DiscountModal ────────────────────────────────────────────────────────────
 
 function DiscountModal({ visible, onClose, topInset, bottomInset, promoCode, onPromoCodeChange,
-  onApplyCode, vouchers, fare, selectedOfferId, onSelectOffer, useDrivoXu, onToggleDrivoXu, saving, onApply, drivoXuBalance }: {
+  onApplyCode, promoError, vouchers, fare, selectedOfferId, onSelectOffer, useDrivoXu, onToggleDrivoXu, saving, onApply, drivoXuBalance }: {
   visible: boolean; onClose: () => void;
   topInset: number; bottomInset: number;
   promoCode: string; onPromoCodeChange: (v: string) => void;
-  onApplyCode: () => void;
+  onApplyCode: () => void; promoError: string | null;
   vouchers: Voucher[]; fare: number;
   selectedOfferId: string | null; onSelectOffer: (id: string) => void;
   useDrivoXu: boolean; onToggleDrivoXu: () => void;
@@ -741,6 +734,12 @@ function DiscountModal({ visible, onClose, topInset, bottomInset, promoCode, onP
               </TouchableOpacity>
             )}
           </View>
+          {promoError && (
+            <View style={d.promoErrorRow}>
+              <Ionicons name="alert-circle" size={14} color="#ef4444" />
+              <Text style={d.promoErrorText}>{promoError}</Text>
+            </View>
+          )}
 
           {/* Vouchers */}
           <Text style={d.sectionTitle}>Ưu đãi của bạn</Text>
@@ -912,22 +911,10 @@ const s = StyleSheet.create({
     shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
   },
   bookText: { color: 'white', fontSize: 16, fontWeight: '700' },
-  originOuter: {
-    width: 20, height: 20, borderRadius: 10, backgroundColor: 'white',
-    borderWidth: 3, borderColor: '#2563EB', alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 6,
-  },
-  originInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2563EB' },
+  pickupPin: { width: 36, height: 36 },
   destMarkerWrap: { alignItems: 'center' },
   destPin: { marginBottom: -6 },
   destShadowDot: { width: 8, height: 4, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.2)' },
-  driverMarker: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: '#2563EB',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'white',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 3, elevation: 4,
-  },
   youLabel: { backgroundColor: '#111827', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   youText: { color: 'white', fontSize: 11, fontWeight: '700' },
   destMarker: { alignItems: 'center' },
@@ -972,6 +959,8 @@ const d = StyleSheet.create({
   codeInput: { flex: 1, fontSize: 14, color: '#111827', padding: 0 },
   applyCodeBtn: { backgroundColor: '#2563EB', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   applyCodeText: { color: 'white', fontSize: 13, fontWeight: '600' },
+  promoErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -12, marginBottom: 16 },
+  promoErrorText: { flex: 1, fontSize: 12, color: '#ef4444' },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 4 },
   sectionSub: { fontSize: 12, color: '#9ca3af', marginBottom: 12 },
   offerCard: {

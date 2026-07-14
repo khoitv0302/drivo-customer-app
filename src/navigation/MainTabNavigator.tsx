@@ -42,6 +42,7 @@ export default function MainTabNavigator() {
         name={TABS.HISTORY}
         component={TripHistoryScreen}
         options={{ title: 'Lịch sử' }}
+        listeners={{ tabPress: () => console.log('[Tab] History clicked') }}
       />
       <Tab.Screen
         name={TABS.NOTIFICATIONS}

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
-  Alert, Image, KeyboardAvoidingView, Platform, ScrollView,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRateTrip } from '@shared/hooks/useRateTrip';
+import { useToast } from '@shared/components/ui/Toast';
 import type { RootScreenProps } from '../../../navigation/types';
 
 const RATING_LABELS = ['Chạm để chấm điểm', 'Rất tệ', 'Tệ', 'Bình thường', 'Tốt', 'Tuyệt vời!'];
@@ -22,11 +23,14 @@ export default function RideCompleteScreen({ navigation, route }: RootScreenProp
   const [stars, setStars] = useState(0);
   const [comment, setComment] = useState('');
   const { mutate: submitRating, isPending } = useRateTrip();
+  const { showToast } = useToast();
 
   const goHome = () => navigation.popToTop();
 
+  // Toast xác nhận rồi mới về Home — chờ 1.2s để người dùng kịp thấy thông báo.
   const finish = (msg: string) => {
-    Alert.alert('Hoàn tất', msg, [{ text: 'OK', onPress: goHome }]);
+    showToast(msg, { type: 'success' });
+    setTimeout(goHome, 1200);
   };
 
   const handleSubmit = () => {
@@ -38,7 +42,7 @@ export default function RideCompleteScreen({ navigation, route }: RootScreenProp
         onError: (err) => {
           const already = err.errors?.some((e) => e.code === 'RATING_ALREADY_SUBMITTED');
           if (already) finish('Bạn đã đánh giá chuyến này rồi.');
-          else Alert.alert('Gửi đánh giá thất bại', err.message);
+          else showToast(err.message, { type: 'error' });
         },
       },
     );
@@ -146,8 +150,9 @@ export default function RideCompleteScreen({ navigation, route }: RootScreenProp
             onPress={handleSubmit}
             disabled={stars === 0 || isPending}
             activeOpacity={0.85}
-            style={[s.submitBtn, (stars === 0 || isPending) && s.submitDisabled]}
+            style={[s.submitBtn, (stars === 0 || isPending) && s.submitDisabled, isPending && s.submitBtnRow]}
           >
+            {isPending && <ActivityIndicator size="small" color="#9ca3af" />}
             <Text style={[s.submitText, (stars === 0 || isPending) && s.submitTextDisabled]}>
               {isPending ? 'Đang gửi...' : 'Gửi đánh giá'}
             </Text>
@@ -217,6 +222,7 @@ const s = StyleSheet.create({
     backgroundColor: '#2563EB', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 16,
     shadowColor: '#2563EB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
   },
+  submitBtnRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   submitDisabled: { backgroundColor: '#e5e7eb', shadowOpacity: 0, elevation: 0 },
   submitText: { color: 'white', fontSize: 16, fontWeight: '700' },
   submitTextDisabled: { color: '#9ca3af' },

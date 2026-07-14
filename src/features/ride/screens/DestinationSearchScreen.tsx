@@ -157,14 +157,16 @@ export default function DestinationSearchScreen({ navigation, route }: RootScree
     } else if (editField) {
       navigation.navigate(ROUTES.MAP, params);
     } else if (!params.origin && params.destination) {
-      navigation.replace(ROUTES.PICKUP_LOCATION, {
+      // push (không replace) để back/hủy từ PickupLocation quay đúng lại màn tìm điểm đến này.
+      navigation.push(ROUTES.PICKUP_LOCATION, {
         serviceType,
         destination: params.destination,
         initialLat: location?.latitude,
         initialLng: location?.longitude,
       });
     } else {
-      navigation.replace(ROUTES.MAP, params);
+      // push (không replace) để back/hủy từ Map quay đúng lại màn tìm kiếm này.
+      navigation.push(ROUTES.MAP, params);
     }
   }
 

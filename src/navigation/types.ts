@@ -12,6 +12,8 @@ export type ServiceType = 'car' | 'motorbike';
 export interface RideBookingParams {
   /** ID booking trả về từ POST /bookings */
   bookingId: string;
+  /** ID chuyến — có sau khi nhận event booking_matched (CustomerHub) */
+  tripId?: string;
   serviceType: ServiceType;
   /** Tên điểm đón hiển thị */
   pickupName: string;
@@ -83,7 +85,9 @@ export type RootStackParamList = {
     };
   };
   FindingDriver: RideBookingParams;
-  DriverFound: RideBookingParams;
+  /** tripId luôn có — chỉ vào màn này sau khi nhận event booking_matched */
+  DriverFound: Omit<RideBookingParams, 'tripId'> & { tripId: string };
+  OnTrip: RideBookingParams;
   RideComplete: {
     /** ID chuyến để gọi API đánh giá */
     tripId: string;

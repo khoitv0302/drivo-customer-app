@@ -1,9 +1,10 @@
-import { ActivityIndicator, Alert, Image, Linking, ScrollView, Share, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, ScrollView, Share, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Card from '../../../shared/components/ui/Card';
 import { formatNumber, formatDate, formatTime } from '@shared/utils/format';
 import { useTripDetail } from '@shared/hooks/useTripDetail';
+import { useToast } from '@shared/components/ui/Toast';
 import type { RootScreenProps } from '../../../navigation/types';
 import { mapTrip } from '../mapTrip';
 
@@ -81,6 +82,7 @@ function DetailHeader({ onBack, topInset }: { onBack: () => void; topInset: numb
 export default function TripDetailScreen({ navigation, route }: RootScreenProps<'TripDetail'>) {
   const insets = useSafeAreaInsets();
   const { tripId } = route.params;
+  const { showToast } = useToast();
   const { data: trip, isLoading, isError, refetch } = useTripDetail(tripId);
 
   // Chưa có dữ liệu (đang tải hoặc lỗi) → hiện header + trạng thái tương ứng.
@@ -121,24 +123,34 @@ export default function TripDetailScreen({ navigation, route }: RootScreenProps<
   // Định dạng tiền: có giá trị → "12.345đ", null → "—".
   const money = (n: number | null) => (n != null ? `${formatNumber(n)}đ` : '—');
   const hasDiscount = trip.discountAmount != null && trip.discountAmount > 0;
-  // Tổng thực trả: ưu tiên netFareAmount, chưa có thì lấy cước gốc.
-  const totalAmount = trip.netFareAmount ?? trip.fareAmount;
-  // Chuyến chưa tính tiền (đang đi) → hiện ghi chú thay vì số 0.
-  const farePending = trip.fareAmount == null && trip.netFareAmount == null;
+  // Tổng thực trả: netFareAmount (đã hoàn tất) → fareAmount → quotedFareAmount (chuyến đang đi, tạm tính).
+  const totalAmount = trip.netFareAmount ?? trip.fareAmount ?? trip.quotedFareAmount;
+  // Chưa có bất kỳ số tiền nào (kể cả tạm tính) → hiện ghi chú thay vì số 0.
+  const farePending = totalAmount == null;
 
-  const comingSoon = () => Alert.alert('Sắp ra mắt', 'Tính năng đang được phát triển.');
+  const comingSoon = () => showToast('Tính năng đang được phát triển.', { type: 'info' });
 
   const shareTrip = () => {
     Share.share({
       message:
         `Chuyến đi Drivo\n${t.from} → ${t.to}\n` +
-        `Tài xế: ${trip.counterpartyName}\nMã chuyến: ${trip.tripCode}`,
+        `Tài xế: ${trip.counterparty.fullName}\nMã chuyến: ${trip.tripCode}`,
     }).catch(() => {});
   };
 
   const callSupport = () => {
     Linking.openURL(`tel:${SUPPORT_PHONE}`).catch(() =>
-      Alert.alert('Không gọi được', 'Vui lòng thử lại sau.'),
+      showToast('Không gọi được, vui lòng thử lại sau.', { type: 'error' }),
+    );
+  };
+
+  const callDriver = () => {
+    if (!trip.counterparty.phone) {
+      showToast('Tài xế chỉ hiển thị số trong lúc chuyến đang diễn ra.', { type: 'info' });
+      return;
+    }
+    Linking.openURL(`tel:${trip.counterparty.phone}`).catch(() =>
+      showToast('Không gọi được, vui lòng thử lại sau.', { type: 'error' }),
     );
   };
 
@@ -211,15 +223,18 @@ export default function TripDetailScreen({ navigation, route }: RootScreenProps<
 
           {/* Driver */}
           <View className="flex-row items-center mt-4">
-            <Image source={require('../../../../assets/avatar.jpg')} className="w-11 h-11 rounded-full mr-3" />
+            <Image
+              source={trip.counterparty.avatarUrl ? { uri: trip.counterparty.avatarUrl } : require('../../../../assets/avatar.jpg')}
+              className="w-11 h-11 rounded-full mr-3"
+            />
             <View className="flex-1">
-              <Text className="text-sm font-bold text-gray-900">{trip.counterpartyName}</Text>
+              <Text className="text-sm font-bold text-gray-900">{trip.counterparty.fullName}</Text>
               <Text className="text-xs text-gray-400 mt-0.5">Tài xế</Text>
             </View>
-            {trip.counterpartyRating != null && (
+            {trip.counterparty.rating != null && (
               <View className="flex-row items-center" style={{ gap: 3 }}>
                 <Ionicons name="star" size={14} color="#f59e0b" />
-                <Text className="text-sm font-bold text-gray-800">{trip.counterpartyRating.toFixed(1)}</Text>
+                <Text className="text-sm font-bold text-gray-800">{trip.counterparty.rating.toFixed(1)}</Text>
               </View>
             )}
           </View>
@@ -305,13 +320,16 @@ export default function TripDetailScreen({ navigation, route }: RootScreenProps<
           </View>
 
           <View className="flex-row items-center">
-            <Image source={require('../../../../assets/avatar.jpg')} className="w-11 h-11 rounded-full mr-3" />
+            <Image
+              source={trip.counterparty.avatarUrl ? { uri: trip.counterparty.avatarUrl } : require('../../../../assets/avatar.jpg')}
+              className="w-11 h-11 rounded-full mr-3"
+            />
             <View className="flex-1">
-              <Text className="text-sm font-bold text-gray-900">{trip.counterpartyName}</Text>
+              <Text className="text-sm font-bold text-gray-900">{trip.counterparty.fullName}</Text>
               <Text className="text-xs text-gray-400 mt-0.5">Tài xế</Text>
             </View>
             <View className="flex-row" style={{ gap: 8 }}>
-              <RoundIconButton icon="call" onPress={comingSoon} />
+              <RoundIconButton icon="call" onPress={callDriver} />
               <RoundIconButton icon="chatbubble-ellipses" onPress={comingSoon} />
             </View>
           </View>

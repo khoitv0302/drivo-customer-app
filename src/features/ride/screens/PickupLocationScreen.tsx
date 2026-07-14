@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import Mapbox, { locationManager } from '@rnmapbox/maps';
@@ -41,7 +46,8 @@ export default function PickupLocationScreen({
   const [pinDetails, setPinDetails] = useState<PlaceDetails | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [noteText, setNoteText] = useState('');
-  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
   // GPS listener — only for recenter. Initial position comes from params so no need to wait.
   useEffect(() => {
@@ -140,12 +146,23 @@ export default function PickupLocationScreen({
     });
   }
 
+  function openNoteModal() {
+    setNoteDraft(noteText);
+    setNoteModalVisible(true);
+  }
+
+  function saveNote() {
+    setNoteText(noteDraft.trim());
+    setNoteModalVisible(false);
+  }
+
   function confirmPickup() {
     if (!pinDetails) return;
     const origin: PlaceDetails = noteText.trim()
       ? { ...pinDetails, name: `${pinDetails.name} (${noteText.trim()})` }
       : pinDetails;
-    navigation.replace(ROUTES.MAP, { serviceType, origin, destination });
+    // push (không replace) để back từ Map quay đúng lại màn chọn điểm đón này.
+    navigation.push(ROUTES.MAP, { serviceType, origin, destination });
   }
 
   return (
@@ -168,6 +185,8 @@ export default function PickupLocationScreen({
           ref={cameraRef as any}
           defaultSettings={{ centerCoordinate: initCenter, zoomLevel: 16.5 }}
         />
+        {/* KHÔNG bật pulsing ở màn này: animation chạy liên tục khiến map không bao giờ vào
+            trạng thái idle → onMapIdle không bắn → không resolve được địa chỉ khi kéo ghim. */}
         <Mapbox.LocationPuck visible />
       </Mapbox.MapView>
 
@@ -186,7 +205,7 @@ export default function PickupLocationScreen({
               </View>
             ) : null}
           </View>
-          <Ionicons name="location" size={48} color="#2563EB" />
+          <Image source={require('../../../../assets/pin.png')} style={s.centerPin} resizeMode="contain" />
           <View style={s.pinShadow} />
         </View>
       </View>
@@ -209,7 +228,7 @@ export default function PickupLocationScreen({
 
       {/* Recenter button */}
       <TouchableOpacity
-        style={[s.recenterBtn, { bottom: showNoteInput ? 340 : 280 }]}
+        style={[s.recenterBtn, { bottom: 280 }]}
         onPress={recenterToGPS}
         activeOpacity={0.8}
       >
@@ -239,33 +258,12 @@ export default function PickupLocationScreen({
 
         <View style={s.divider} />
 
-        {showNoteInput ? (
-          <View style={s.noteInputRow}>
-            <Ionicons name="create-outline" size={16} color="#6b7280" />
-            <TextInput
-              value={noteText}
-              onChangeText={setNoteText}
-              placeholder="Ví dụ: gần cổng, tầng 2..."
-              placeholderTextColor="#9ca3af"
-              style={s.noteInput}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={() => setShowNoteInput(false)}
-            />
-            {noteText.length > 0 && (
-              <TouchableOpacity onPress={() => setNoteText('')}>
-                <Ionicons name="close-circle" size={16} color="#9ca3af" />
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <TouchableOpacity style={s.noteRow} activeOpacity={0.7} onPress={() => setShowNoteInput(true)}>
-            <Ionicons name="add-circle" size={18} color="#2563EB" />
-            <Text style={s.noteText}>
-              {noteText.trim() ? noteText : 'Thêm chi tiết điểm đón (ví dụ: gần cổng)'}
-            </Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={s.noteRow} activeOpacity={0.7} onPress={openNoteModal}>
+          <Ionicons name="add-circle" size={18} color="#2563EB" />
+          <Text style={s.noteText} numberOfLines={1}>
+            {noteText.trim() ? noteText : 'Thêm chi tiết điểm đón (ví dụ: gần cổng)'}
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[s.confirmBtn, (!pinDetails || isGeocoding) && s.confirmBtnDisabled]}
@@ -276,6 +274,43 @@ export default function PickupLocationScreen({
           <Text style={s.confirmText}>Chọn điểm đón này</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Popup thêm chi tiết điểm đón — tách khỏi bottom sheet để không bị bàn phím che. */}
+      <Modal
+        transparent
+        animationType="slide"
+        visible={noteModalVisible}
+        onRequestClose={() => setNoteModalVisible(false)}
+        statusBarTranslucent
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.noteModalRoot}
+        >
+          <TouchableWithoutFeedback onPress={() => setNoteModalVisible(false)}>
+            <View style={StyleSheet.absoluteFillObject} />
+          </TouchableWithoutFeedback>
+
+          <View style={[s.noteModalSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <View style={s.handle} />
+            <Text style={s.noteModalTitle}>Thêm chi tiết điểm đón</Text>
+            <TextInput
+              value={noteDraft}
+              onChangeText={setNoteDraft}
+              placeholder="Ví dụ: gần cổng, tầng 2..."
+              placeholderTextColor="#9ca3af"
+              style={s.noteTextarea}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              autoFocus
+            />
+            <TouchableOpacity style={s.noteSaveBtn} activeOpacity={0.85} onPress={saveNote}>
+              <Text style={s.noteSaveText}>Lưu</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -349,6 +384,7 @@ const s = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
+  centerPin: { width: 48, height: 48 },
   pinShadow: {
     width: 10, height: 5, borderRadius: 5,
     backgroundColor: 'rgba(0,0,0,0.18)',
@@ -394,18 +430,23 @@ const s = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 12 },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 4 },
   noteText: { fontSize: 13, color: '#2563EB', fontWeight: '500', flex: 1 },
-  noteInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1.5,
-    borderColor: '#2563EB',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginBottom: 4,
+  noteModalRoot: { flex: 1, justifyContent: 'flex-end' },
+  noteModalSheet: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 20, paddingTop: 8,
   },
-  noteInput: { flex: 1, fontSize: 13, color: '#111827', padding: 0 },
+  noteModalTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 14 },
+  noteTextarea: {
+    borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: '#111827', minHeight: 100,
+  },
+  noteSaveBtn: {
+    backgroundColor: '#2563EB', borderRadius: 14,
+    paddingVertical: 15, alignItems: 'center', marginTop: 16,
+  },
+  noteSaveText: { color: 'white', fontSize: 15, fontWeight: '700' },
   confirmBtn: {
     backgroundColor: '#2563EB',
     borderRadius: 14,
